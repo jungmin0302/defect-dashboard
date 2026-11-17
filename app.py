@@ -92,7 +92,7 @@ k[1].metric('처리 기간 중앙값', f'{v["lead"].median():.0f}일')
 k[2].metric(f'{TARGET}일 넘긴 비율', f'{(v["lead"] > TARGET).mean():.1%}')
 k[3].metric('시스템상 처리 0일 비율', f'{(d["sys_lead"] == 0).mean():.1%}', help='시스템의 접수일과 처리일이 같은 날인 건. 처리 후 일괄 입력된 흔적입니다. 전체 접수 기준이며, 탭 3은 메모 날짜가 있는 건만 비교합니다.')
 
-tabs = st.tabs(['요약', '1. 어디에 몰리나', '2. 얼마나 걸리나', '3. 왜 지금은 안 보이나', '4. 목표일을 두면', '5. 왜 이 기능부터(7-2)'])
+tabs = st.tabs(['요약', '1. 어디에 몰리나', '2. 얼마나 걸리나', '3. 왜 지금은 안 보이나', '4. 목표일을 두면', '5. 왜 이 기능부터(7-2)', '6. 처리 화면 시안'])
 
 # ---------- 요약 ----------
 with tabs[0]:
@@ -113,7 +113,7 @@ with tabs[0]:
                                ('④ 2년차 점검 일정 관리', '여러 하자를 한 번에 방문하는 일정으로 묶기')]):
         col.markdown(f'<div style="border:1px solid {GREY};border-radius:10px;padding:12px 14px;height:120px">'
                      f'<b style="color:{RED}">{h}</b><br><span style="color:{INK}">{b}</span></div>', unsafe_allow_html=True)
-    st.caption('각 발견의 근거는 위 탭 1–3에, 목표일 효과 추정은 탭 4에, 이 기능을 먼저 만드는 이유는 탭 5(중간고사 7-2 분석)에 있습니다.')
+    st.caption('각 발견의 근거는 위 탭 1–3에, 목표일 효과 추정은 탭 4에, 이 기능을 먼저 만드는 이유는 탭 5(중간고사 7-2 분석)에, 이 기능을 넣은 화면 시안은 탭 6에 있습니다.')
 
 # ---------- 1. 어디에 몰리나 ----------
 with tabs[1]:
@@ -249,3 +249,95 @@ with tabs[5]:
     st.markdown('**대안별 가중합 점수(0–1)**')
     st.plotly_chart(hbar(total, '가중합', '대안', colors, '{:.3f}'), width='stretch')
     st.caption('기본 가중치(7-2 Max100): ① .621 > ② .504 > ⓪ .394 > ③ .390. 점수(1–5점)는 7-2에서 연구자가 확정한 값입니다.')
+
+
+# ---------- 6. 처리 화면 시안 ----------
+AMBER = '#B7791F'
+STATUS_BG = {'초과': '#F6DDD6', '임박': '#F7EBD3', '정상': '#FFFFFF'}
+
+
+@st.cache_data
+def open_trend(req, done, target):
+    """주 단위로 '그날 처리 중이던 건'과 그중 목표일을 넘긴 건을 센다."""
+    days = pd.date_range('2023-01-02', '2025-12-29', freq='W-MON')
+    req, done = req.values, done.values
+    rows = []
+    for t in days.values:
+        is_open = (req <= t) & (done > t)
+        over = is_open & ((t - req) > np.timedelta64(target, 'D'))
+        rows.append((t, is_open.sum(), over.sum()))
+    return pd.DataFrame(rows, columns=['기준일', '처리 중', '목표일 초과'])
+
+
+with tabs[6]:
+    st.markdown('CS 직원이 매일 아침 여는 **처리 관리 화면**을 실제 데이터로 재현한 시안입니다. '
+                '기준일을 고르면 그날 처리 중이던 건(요청일은 지났고 완료일은 아직 오지 않은 건)을 경과일 순으로 보여 줍니다.')
+    c1, c2, c3 = st.columns([1, 1, 2])
+    asof = pd.Timestamp(c1.date_input('기준일', value=pd.Timestamp('2024-10-01'),
+                                      min_value=pd.Timestamp('2023-01-01'), max_value=pd.Timestamp('2025-12-31')))
+    tgt = c2.number_input('목표일(일)', min_value=3, max_value=60, value=TARGET, step=1)
+    near = 3
+    op = v[(v['memo_req'] <= asof) & (v['memo_done'] > asof)].copy()
+    op['경과일'] = (asof - op['memo_req']).dt.days
+    op['남은 일수'] = tgt - op['경과일']
+    op['상태'] = np.select([op['경과일'] > tgt, op['경과일'] > tgt - near], ['초과', '임박'], '정상')
+    n_over, n_near = (op['상태'] == '초과').sum(), (op['상태'] == '임박').sum()
+
+    if len(op):
+        worst = op.groupby('trade').size().sort_values(ascending=False)
+        takeaway(f'{asof:%Y-%m-%d} 아침에 처리 중인 건은 {len(op):,}건이고, 그중 {n_over:,}건({n_over / len(op):.0%})이 목표일 {tgt}일을 넘겼습니다. '
+                 f'가장 많이 쌓인 공종은 {", ".join(worst.index[:3])}입니다. '
+                 '지금 시스템은 처리를 마친 뒤 날짜를 입력하므로 이 목록을 그날 만들 수 없습니다. 단계별 기록(기능 ①)이 있어야 이 화면이 가능합니다.')
+    else:
+        takeaway(f'{asof:%Y-%m-%d}에는 선택한 조건에서 처리 중인 건이 없습니다. 기준일이나 필터를 바꿔 보세요.')
+
+    k = st.columns(4)
+    k[0].metric('처리 중', f'{len(op):,}건')
+    k[1].metric(f'목표일 초과 ({tgt}일 넘음)', f'{n_over:,}건')
+    k[2].metric(f'임박 (남은 {near}일 이내)', f'{n_near:,}건')
+    k[3].metric('가장 오래된 건', f'{op["경과일"].max() if len(op) else 0:,}일째')
+
+    tr = open_trend(v['memo_req'], v['memo_done'], int(tgt))
+    fig = go.Figure()
+    fig.add_scatter(x=tr['기준일'], y=tr['처리 중'], name='처리 중', mode='lines', line=dict(color=BLUE, width=2),
+                    hovertemplate='%{x|%Y-%m-%d}<br>처리 중 %{y:,}건<extra></extra>')
+    fig.add_scatter(x=tr['기준일'], y=tr['목표일 초과'], name=f'그중 목표일 초과', mode='lines', line=dict(color=RED, width=2),
+                    hovertemplate='%{x|%Y-%m-%d}<br>목표일 초과 %{y:,}건<extra></extra>')
+    fig.add_vline(x=asof, line_width=1, line_dash='dot', line_color=INK)
+    fig.update_layout(showlegend=True, hovermode='x unified')
+    st.markdown('**주별 처리 중 건수**(점선 = 선택한 기준일)')
+    st.plotly_chart(style(fig, 260), width='stretch')
+
+    if len(op):
+        f1, f2 = st.columns(2)
+        stat_sel = f1.multiselect('상태', ['초과', '임박', '정상'], default=['초과', '임박', '정상'])
+        partners = f2.multiselect('협력사(비우면 전체)', op['partner'].value_counts().index.tolist())
+        w = op[op['상태'].isin(stat_sel)]
+        if partners:
+            w = w[w['partner'].isin(partners)]
+        w = w.sort_values('경과일', ascending=False)
+        table = pd.DataFrame({'상태': w['상태'], '동': w['dong'], '세대': w['unit_id'], '공종': w['trade'],
+                              '세부 공종': w['sub_trade'], '하자 유형': w['defect_type'], '위치': w['place'],
+                              '협력사': w['partner'], '요청일': w['memo_req'].dt.strftime('%Y-%m-%d'),
+                              '경과일': w['경과일'], '남은 일수(음수=초과)': w['남은 일수']})
+        st.markdown(f'**처리 대기 목록** {len(table):,}건 · 경과일이 긴 순')
+        st.dataframe(table.style.apply(lambda r: [f'background-color:{STATUS_BG[r["상태"]]}'] * len(r), axis=1),
+                     width='stretch', height=420, hide_index=True)
+
+        by = op.pivot_table(index='trade', columns='상태', values='경과일', aggfunc='size', fill_value=0)
+        for col in ['초과', '임박', '정상']:
+            if col not in by:
+                by[col] = 0
+        by = by[['초과', '임박', '정상']].sort_values('초과', ascending=False).head(10)
+        fig = go.Figure()
+        for col, color in [('초과', RED), ('임박', AMBER), ('정상', GREY)]:
+            fig.add_bar(y=by.index, x=by[col], name=col, orientation='h', marker_color=color,
+                        hovertemplate='%{y}<br>' + col + ' %{x:,}건<extra></extra>')
+        fig.update_layout(barmode='stack', showlegend=True, legend_traceorder='normal')
+        fig.update_yaxes(autorange='reversed', gridcolor='rgba(0,0,0,0)')
+        fig.update_xaxes(gridcolor='#EEF0F1')
+        st.markdown('**공종별 처리 중 건수**(초과가 많은 10개 공종)')
+        st.plotly_chart(style(fig, 34 * len(by) + 90), width='stretch')
+    st.caption('이 화면은 완료된 기록을 거꾸로 돌려 "그날 보였어야 할 목록"을 재구성한 것입니다. 실제 운영에서는 배정·방문 단계 날짜가 더해져 '
+               '"누가 붙잡고 있는지"까지 보여야 합니다. 세대는 동·호수를 비공개 키로 해시한 값입니다.')
+
