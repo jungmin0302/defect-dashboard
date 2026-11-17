@@ -119,8 +119,8 @@ with tabs[0]:
 with tabs[1]:
     tc = d['trade'].value_counts().rename_axis('공종').reset_index(name='건수')
     n80 = int((tc['건수'].cumsum() / tc['건수'].sum() < 0.8).sum()) + 1
-    top3 = tc.head(3)
-    takeaway(f'접수는 {top3["공종"].iloc[0]}·{top3["공종"].iloc[1]}·{top3["공종"].iloc[2]} 순으로 많고, '
+    top3 = '·'.join(tc['공종'].head(3))  # 공종 필터로 1~2개만 고르면 3개보다 적다
+    takeaway(f'접수는 {top3} 순으로 많고, '
              f'전체 {len(tc)}개 공종 중 상위 {n80}개가 접수의 80%를 차지합니다. '
              '빨간 막대는 지연 부담 상위 6개 공종(탭 2)으로, 건수가 많은 공종과 대부분 겹칩니다.')
     t15 = tc.head(15)
@@ -340,4 +340,5 @@ with tabs[6]:
         st.plotly_chart(style(fig, 34 * len(by) + 90), width='stretch')
     st.caption('이 화면은 완료된 기록을 거꾸로 돌려 "그날 보였어야 할 목록"을 재구성한 것입니다. 실제 운영에서는 배정·방문 단계 날짜가 더해져 '
                '"누가 붙잡고 있는지"까지 보여야 합니다. 세대는 동·호수를 비공개 키로 해시한 값입니다.')
+
 
