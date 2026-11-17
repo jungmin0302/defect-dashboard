@@ -63,8 +63,8 @@ with tabs[0]:
     fig = go.Figure()
     fig.add_bar(x=top['공종'], y=top['건수'], name='건수')
     fig.add_scatter(x=top['공종'], y=top['누적비율'], yaxis='y2', name='누적비율', mode='lines+markers')
-    fig.update_layout(yaxis2=dict(overlaying='y', side='right', tickformat='.0%', range=[0, 1]), height=420,
-                      legend=dict(orientation='h'))
+    fig.update_layout(yaxis2=dict(overlaying='y', side='right', tickformat='.0%', range=[0, 1]), height=460,
+                      legend=dict(orientation='h', y=1.1), margin=dict(b=120))
     st.plotly_chart(fig, use_container_width=True)
     n80 = int((tc['누적비율'] < 0.8).sum()) + 1
     st.write(f'전체 {len(tc)}개 공종 중 상위 {n80}개 공종이 접수의 80%를 차지합니다.')
@@ -73,10 +73,21 @@ with tabs[0]:
     dt.columns = ['하자유형', '건수']
     c1.plotly_chart(px.bar(dt, x='건수', y='하자유형', orientation='h', title='하자유형 상위 12').update_yaxes(autorange='reversed'),
                     use_container_width=True)
+    # 같은 세대·같은 공종이 30일 이상 간격으로 다시 들어온 건을 재접수로 본다
+    r = d.dropna(subset=['memo_req']).sort_values('memo_req')
+    r = r.assign(gap=r.groupby(['unit_id', 'trade'])['memo_req'].diff().dt.days)
+    rp = r.groupby('trade').agg(접수=('gap', 'size'), 재접수=('gap', lambda s: (s >= 30).sum()))
+    rp = rp[rp['접수'] >= 100]
+    rp['재접수율'] = rp['재접수'] / rp['접수']
+    rp = rp.sort_values('재접수율', ascending=False).head(12).reset_index().rename(columns={'trade': '공종'})
     pl = d['place'].value_counts().head(12).reset_index()
     pl.columns = ['장소', '건수']
     c2.plotly_chart(px.bar(pl, x='건수', y='장소', orientation='h', title='장소 상위 12').update_yaxes(autorange='reversed'),
                     use_container_width=True)
+    st.plotly_chart(px.bar(rp, x='공종', y='재접수율', hover_data=['접수', '재접수'],
+                           title='공종별 재접수율(같은 세대·같은 공종이 30일 이상 지나 다시 접수, 100건 이상 공종)')
+                    .update_yaxes(tickformat='.0%'), use_container_width=True)
+    st.caption('메모의 "중복" 표시는 전체의 67%에 붙어 있어 재접수 지표로 쓰지 않았습니다.')
 
 # ---------- ② 처리 기간 ----------
 with tabs[1]:
@@ -114,7 +125,7 @@ with tabs[1]:
         fig = go.Figure()
         fig.add_bar(x=mt['월'], y=mt['접수'], name='요청 건수')
         fig.add_scatter(x=mt['월'], y=mt['중앙값'], yaxis='y2', name='처리 기간 중앙값(일)', mode='lines+markers')
-        fig.update_layout(title='요청 월별 건수와 처리 기간', yaxis2=dict(overlaying='y', side='right'), legend=dict(orientation='h'))
+        fig.update_layout(title='요청 월별 건수와 처리 기간', yaxis2=dict(overlaying='y', side='right'), legend=dict(orientation='h', y=1.12))
         st.plotly_chart(fig, use_container_width=True)
 
 # ---------- ③ 기록 품질 ----------
